@@ -1,74 +1,99 @@
 // ==UserScript==
-// @name         Shorts auto scroll
+// @name         Shorts Auto Scroll
 // @namespace    http://tampermonkey.net/
-// @version      2024-06-14
-// @description  Sit back and relax. YT Shorts will automaticaly scroll when finished
+// @version      2025-07-10
+// @description  Auto-scroll to next YouTube Short.
 // @author       vincent bruneau
-// @match        https://www.youtube.com/*
-// @match        http://youtube.com/*
-// @match        http*://*.youtube.com/*
-// @match        *://*youtu.be/*
-// @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
+// @match        *://www.youtube.com/*
 // @grant        none
-// @license       MIT
+// @license      MIT
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
-    var t,conf,cs;
 
+    let currentVideo = null;
+    let currentSrc = null;
 
-    const mo = new MutationObserver((mo)=>{
+    function log(...args) {
+        console.log('[Shorts Auto Scroll]', ...args);
+    }
 
-        mo.forEach((m)=>{
-            if(m.type === "attributes" && m.attributeName === "aria-valuenow") {
-                let I = parseInt(m.oldValue);
-                if(I === 99) {
-                    document.querySelector('#navigation-button-down button').click();
-                    window.setTimeout( ()=> _u(), 2200 );
-                }
-            }
-        });
+    function isShortsPage() {
+        return location.pathname.startsWith("/shorts");
+    }
 
-    });
+    function getVideo() {
+        return document.querySelector("video.video-stream.html5-main-video");
+    }
 
-    const mo2 = new MutationObserver((mo)=>{
-        mo.forEach((m)=>{
-            if(m.type === "attributes" && m.attributeName === "is-active") {
-                mo.disconnect();
-                window.setTimeout( ()=> _u(), 2200 );
-            }
-        });
-    });
+    function getNextButton() {
+        return document.querySelector('#navigation-button-down button');
+    }
 
-    function _a() {
-        cs = document.getElementById("#shorts-inner-container");
-
-        if(cs != null) {
-            mo2.observe(cs, {
-                childList: true,
-                subtree: true,
-            });
-        }
-        else {
-            window.setTimeout( ()=> _u(), 2200 );
+    function scrollToNext() {
+        const btn = getNextButton();
+        if (btn && btn.getAttribute("aria-disabled") !== "true") {
+            log("Scrolling to next Short");
+            btn.click();
+        } else {
+            log("Next button not found or disabled");
         }
     }
 
-    function _u() {
-        t = document.querySelector("#short-video-container .PlayerControlsProgressBarHost");
-        console.log(t);
+    function bindToVideo(video) {
+        if (!video || video.dataset.autoScrollBound === "true") return;
 
-        if(t != null) {
-            mo.observe(t, {
-                attributeOldValue: true,
-                subtree: true,
-            });
-        }
-        else {
-            window.setTimeout( ()=> _u(), 2200 );
+        video.dataset.autoScrollBound = "true";
+        video.dataset.autoScrollTriggered = "false";
+
+        log("Bound to video element:", video.src);
+
+        video.addEventListener("timeupdate", function () {
+            const duration = video.duration;
+            const current = video.currentTime;
+            if (
+                duration &&
+                current / duration > 0.98 &&
+                video.dataset.autoScrollTriggered !== "true"
+            ) {
+                video.dataset.autoScrollTriggered = "true";
+                scrollToNext();
+            }
+        });
+
+        video.addEventListener("play", function () {
+            if (video.dataset.autoScrollTriggered === "true") {
+                log("Video played again — resetting scroll trigger");
+                video.dataset.autoScrollTriggered = "false";
+            }
+        });
+    }
+
+    function detectAndBindVideo() {
+        if (!isShortsPage()) return;
+
+        const video = getVideo();
+        if (!video) return;
+
+        const srcChanged = video.src !== currentSrc;
+        if (video !== currentVideo || srcChanged) {
+            currentVideo = video;
+            currentSrc = video.src;
+            bindToVideo(video);
         }
     }
 
-    _u();
+    function init() {
+        log("Shorts Auto Scroll initialized");
+
+        setInterval(detectAndBindVideo, 1000);
+
+        window.addEventListener("yt-navigate-finish", function () {
+            currentVideo = null;
+            currentSrc = null;
+        });
+    }
+
+    init();
 })();
